@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'profile_screen.dart';
 
 class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key});
@@ -47,11 +49,56 @@ class _AuthScreenState extends State<AuthScreen>
     super.dispose();
   }
 
+  Future<bool> _isProfileComplete(String userId) async {
+    final doc =
+        await FirebaseFirestore.instance.collection('users').doc(userId).get();
+    return doc.exists &&
+        doc['mobileNumber'] != null &&
+        doc['mobileNumber'].isNotEmpty;
+  }
+
+  Future<void> _navigateWithProfileCheck() async {
+    final user = _auth.currentUser;
+    if (user != null) {
+      final isProfileComplete = await _isProfileComplete(user.uid);
+      if (!isProfileComplete) {
+        if (mounted) {
+          showModalBottomSheet(
+            context: context,
+            isScrollControlled: true,
+            backgroundColor: Colors.transparent,
+            builder:
+                (context) => DraggableScrollableSheet(
+                  initialChildSize: 0.9,
+                  minChildSize: 0.5,
+                  maxChildSize: 0.95,
+                  builder:
+                      (context, scrollController) => Container(
+                        decoration: const BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.vertical(
+                            top: Radius.circular(20),
+                          ),
+                        ),
+                        child: ProfileScreen(isPostAuth: true),
+                      ),
+                ),
+          ).then((_) {
+            // Navigate to HomeScreen after modal is closed
+            Navigator.pushReplacementNamed(context, '/home');
+          });
+        }
+      } else {
+        Navigator.pushReplacementNamed(context, '/home');
+      }
+    }
+  }
+
   Future<void> _checkLoginStatus() async {
     final prefs = await SharedPreferences.getInstance();
     final isLoggedIn = prefs.getBool('isLoggedIn') ?? false;
     if (_auth.currentUser != null || isLoggedIn) {
-      Navigator.pushReplacementNamed(context, '/home');
+      await _navigateWithProfileCheck();
     }
   }
 
@@ -79,7 +126,7 @@ class _AuthScreenState extends State<AuthScreen>
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Logged in successfully')));
-      Navigator.pushReplacementNamed(context, '/home');
+      await _navigateWithProfileCheck();
     } on FirebaseAuthException catch (e) {
       String errorMessage;
       switch (e.code) {
@@ -131,7 +178,7 @@ class _AuthScreenState extends State<AuthScreen>
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Registered successfully')));
-      Navigator.pushReplacementNamed(context, '/home');
+      await _navigateWithProfileCheck();
     } on FirebaseAuthException catch (e) {
       String errorMessage;
       switch (e.code) {
@@ -169,7 +216,7 @@ class _AuthScreenState extends State<AuthScreen>
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Logged in with Google')));
-      Navigator.pushReplacementNamed(context, '/home');
+      await _navigateWithProfileCheck();
     } catch (e) {
       _showErrorDialog('Google Sign-In failed: ${e.toString()}');
     } finally {
@@ -187,7 +234,7 @@ class _AuthScreenState extends State<AuthScreen>
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Logged in with Apple')));
-      Navigator.pushReplacementNamed(context, '/home');
+      await _navigateWithProfileCheck();
     } catch (e) {
       _showErrorDialog('Apple Sign-In failed: ${e.toString()}');
     } finally {
